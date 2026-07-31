@@ -62,6 +62,38 @@ resource "aws_s3_bucket" "tfstate" {
   tags = merge(var.tags, { Environment = each.key })
 }
 
+data "aws_iam_policy_document" "tfstate_https_only" {
+  for_each = toset(var.environments)
+
+  statement {
+    sid    = "DenyInsecureTransport"
+    effect = "Deny"
+    actions = [
+      "s3:*"
+    ]
+    resources = [
+      aws_s3_bucket.tfstate[each.key].arn,
+      "${aws_s3_bucket.tfstate[each.key].arn}/*",
+    ]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "tfstate_https_only" {
+  for_each = toset(var.environments)
+
+  bucket = aws_s3_bucket.tfstate[each.key].id
+  policy = data.aws_iam_policy_document.tfstate_https_only[each.key].json
+}
+
 resource "aws_s3_bucket_versioning" "tfstate" {
   for_each = toset(var.environments)
 
@@ -202,6 +234,17 @@ data "aws_iam_policy_document" "least_privilege" {
     effect    = "Allow"
     actions   = ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
     resources = [aws_kms_key.site[each.key].arn, aws_kms_key.tfstate[each.key].arn]
+  }
+
+  # kms:ListAliases no admite restricción por ARN de recurso (lista todos los
+  # alias de la cuenta/región; no hay una variante "por alias"). terraform-live
+  # la necesita para resolver la llave de sitio por nombre de alias en tiempo
+  # de plan/apply (data "aws_kms_alias").
+  statement {
+    sid       = "KmsListAliases"
+    effect    = "Allow"
+    actions   = ["kms:ListAliases"]
+    resources = ["*"]
   }
 
   # Las acciones de gestión de CloudFront no admiten restricción por ARN de
