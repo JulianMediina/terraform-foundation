@@ -32,3 +32,4 @@ Requiere credenciales AWS con permisos administrativos temporales (ver `docs/run
 ## Frecuencia y gobierno
 
 Trunk-based development: cambios vía PR hacia `main`, revisados con cuidado — un error aquí afecta a toda la plataforma. `foundation-ci.yml` valida formato, sintaxis y seguridad (tfsec/checkov) en cada PR; no hay `apply` automático.
+
