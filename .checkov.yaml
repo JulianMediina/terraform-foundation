@@ -1,0 +1,40 @@
+framework:
+  - terraform
+directory:
+  - bootstrap
+download-external-modules: false
+compact: true
+quiet: false
+soft-fail: false
+skip-check:
+  # CKV_AWS_119: las tablas de lock de Terraform no guardan datos sensibles
+  # (solo el LockID); usar una CMK propia en vez del cifrado por defecto de
+  # DynamoDB añade costo sin beneficio real para este caso de uso.
+  - CKV_AWS_119
+  # CKV_TF_1: el diseño de la plataforma versiona los módulos por tag
+  # semántico (vX.Y.Z), no por hash de commit — es la estrategia de
+  # versionamiento documentada en terraform-modules, no un descuido. El tag
+  # solo se publica si module-ci.yml (fmt/validate/tflint/tfsec/checkov)
+  # pasó y el commit pertenece a main.
+  - CKV_TF_1
+  # CKV_AWS_109 / CKV_AWS_356 / CKV_AWS_111: las acciones de gestión de
+  # CloudFront (crear/actualizar distribución, OAC, response headers policy)
+  # no admiten restricción por ARN de recurso en IAM — es una limitación
+  # documentada del servicio, no una política sin acotar a propósito; el
+  # resto de las acciones del rol (S3, DynamoDB, KMS, CloudWatch, SNS) sí
+  # están restringidas por ARN.
+  - CKV_AWS_109
+  - CKV_AWS_356
+  - CKV_AWS_111
+  # CKV_AWS_18: logging de acceso al bucket de tfstate se omite; el acceso a
+  # nivel de API ya queda registrado por CloudTrail (habilitado a nivel de
+  # cuenta), y este bucket no sirve tráfico público como para justificar
+  # logs de acceso adicionales.
+  - CKV_AWS_18
+  # CKV_AWS_144: replicación entre regiones es la evolución de DR
+  # documentada como mejora futura (docs/answers-to-questions.md, pregunta
+  # 9); no se implementa en una cuenta única de alcance de prueba técnica.
+  - CKV_AWS_144
+  # CKV2_AWS_62: notificaciones de eventos no aplican al bucket de estado de
+  # Terraform; no hay procesamiento event-driven sobre sus objetos.
+  - CKV2_AWS_62
