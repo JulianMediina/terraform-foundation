@@ -1,0 +1,79 @@
+name: foundation-plan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "bootstrap/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.9.8"
+  AWS_REGION: us-east-1
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bootstrap
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # Credencial de arranque de larga duración: este es el único pipeline
+      # de toda la plataforma que no puede autenticarse por OIDC, porque es
+      # el que crea el proveedor OIDC del que dependen todos los demás.
+      - name: Configurar credenciales AWS (arranque)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.FOUNDATION_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.FOUNDATION_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Asegurar backend remoto (idempotente)
+        run: ../scripts/ensure-backend.sh
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: terraform fmt
+        run: terraform fmt -check
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: security-scan (tfsec + checkov)
+        run: |
+          docker run --rm -v "$PWD:/src" aquasec/tfsec /src --soft-fail=false
+          pip install --quiet checkov
+          checkov -d . --config-file ../.checkov.yaml --quiet --compact
+
+      - name: terraform plan
+        id: plan
+        run: terraform plan -input=false -no-color -out=tfplan | tee plan_output.txt
+        continue-on-error: true
+
+      - name: Comentar el plan en el PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('bootstrap/plan_output.txt', 'utf8').slice(-60000);
+            const body = `#### Plan Terraform — foundation\n\`\`\`\n${output}\n\`\`\``;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+      - name: Fallar si el plan falló
+        if: steps.plan.outcome == 'failure'
+        run: exit 1

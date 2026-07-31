@@ -54,6 +54,7 @@ resource "aws_kms_alias" "tfstate" {
   target_key_id = aws_kms_key.tfstate[each.key].key_id
 }
 
+#tfsec:ignore:aws-s3-enable-bucket-logging -- el acceso a nivel de API ya queda registrado por CloudTrail (habilitado a nivel de cuenta); un log bucket adicional no se justifica para el alcance de esta prueba.
 resource "aws_s3_bucket" "tfstate" {
   for_each = toset(var.environments)
 
@@ -150,6 +151,7 @@ resource "aws_s3_bucket_public_access_block" "tfstate" {
   restrict_public_buckets = true
 }
 
+#tfsec:ignore:aws-dynamodb-table-customer-key -- la tabla solo guarda el LockID de Terraform (nada sensible); una CMK dedicada añade costo sin beneficio real. Ya usa cifrado con la llave administrada de AWS.
 resource "aws_dynamodb_table" "tflock" {
   for_each = toset(var.environments)
 
@@ -160,6 +162,10 @@ resource "aws_dynamodb_table" "tflock" {
   attribute {
     name = "LockID"
     type = "S"
+  }
+
+  server_side_encryption {
+    enabled = true
   }
 
   point_in_time_recovery {
@@ -322,7 +328,7 @@ data "aws_iam_policy_document" "least_privilege" {
 # mismo por índice: eso último produce un ciclo real en el grafo de Terraform
 # (el nodo "close" del for_each termina dependiendo de sus propias instancias).
 module "gha_role_provider" {
-  source = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.0"
+  source = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.2"
 
   environment          = local.first_environment
   create_oidc_provider = true
@@ -342,7 +348,7 @@ module "gha_role_provider" {
 }
 
 module "gha_role_rest" {
-  source   = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.0"
+  source   = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.2"
   for_each = toset(slice(var.environments, 1, length(var.environments)))
 
   environment                = each.key
