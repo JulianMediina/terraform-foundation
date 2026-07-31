@@ -322,7 +322,7 @@ data "aws_iam_policy_document" "least_privilege" {
 # mismo por índice: eso último produce un ciclo real en el grafo de Terraform
 # (el nodo "close" del for_each termina dependiendo de sus propias instancias).
 module "gha_role_provider" {
-  source = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.0"
+  source = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.2"
 
   environment          = local.first_environment
   create_oidc_provider = true
@@ -342,7 +342,7 @@ module "gha_role_provider" {
 }
 
 module "gha_role_rest" {
-  source   = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.0"
+  source   = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.2"
   for_each = toset(slice(var.environments, 1, length(var.environments)))
 
   environment                = each.key

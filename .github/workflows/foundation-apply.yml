@@ -1,0 +1,44 @@
+name: foundation-apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bootstrap/**"
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.9.8"
+  AWS_REGION: us-east-1
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    environment: foundation
+    defaults:
+      run:
+        working-directory: bootstrap
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configurar credenciales AWS (arranque)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.FOUNDATION_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.FOUNDATION_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Asegurar backend remoto (idempotente)
+        run: ../scripts/ensure-backend.sh
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: terraform apply
+        run: terraform apply -input=false -auto-approve
