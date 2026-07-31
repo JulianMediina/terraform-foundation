@@ -1,0 +1,4 @@
+github_org                 = "julian-mediina"
+modules_repo_ref            = "v0.1.0"
+budget_limit_usd            = 25
+budget_notification_emails  = ["tu-correo@example.com"]
