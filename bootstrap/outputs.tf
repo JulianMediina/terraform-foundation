@@ -15,10 +15,10 @@ output "site_kms_key_arns" {
 
 output "gha_role_arns" {
   description = "ARN del rol OIDC de GitHub Actions, por ambiente."
-  value       = { for env, mod in module.gha_role : env => mod.role_arn }
+  value       = local.gha_role_arns
 }
 
 output "oidc_provider_arn" {
   description = "ARN del proveedor OIDC de GitHub, compartido por los tres ambientes."
-  value       = module.gha_role[local.first_environment].oidc_provider_arn
+  value       = module.gha_role_provider.oidc_provider_arn
 }

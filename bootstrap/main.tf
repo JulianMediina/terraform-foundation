@@ -210,13 +210,37 @@ data "aws_iam_policy_document" "least_privilege" {
   }
 }
 
-module "gha_role" {
-  source   = "git::https://github.com/${var.github_org}/terraform-modules.git//modules/iam-github-oidc?ref=${var.modules_repo_ref}"
-  for_each = toset(var.environments)
+# source y ref son literales a propósito: Terraform los resuelve en "init",
+# antes de leer las variables, así que no pueden depender de var.github_org
+# ni var.modules_repo_ref. Si cambia el usuario/org de GitHub o se publica
+# una versión nueva del módulo, este valor se actualiza a mano aquí.
+#
+# Se separa en dos bloques (uno solo para el primer ambiente, otro con
+# for_each para el resto) en vez de un único for_each que se referencie a sí
+# mismo por índice: eso último produce un ciclo real en el grafo de Terraform
+# (el nodo "close" del for_each termina dependiendo de sus propias instancias).
+module "gha_role_provider" {
+  source = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.0"
+
+  environment          = local.first_environment
+  create_oidc_provider = true
+
+  allowed_subjects = [
+    "repo:${var.github_org}/terraform-live:environment:${local.first_environment}",
+    "repo:${var.github_org}/daviplata-app:environment:${local.first_environment}",
+  ]
+
+  policy_json = data.aws_iam_policy_document.least_privilege[local.first_environment].json
+  tags        = merge(var.tags, { Environment = local.first_environment })
+}
+
+module "gha_role_rest" {
+  source   = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.0"
+  for_each = toset(slice(var.environments, 1, length(var.environments)))
 
   environment                = each.key
-  create_oidc_provider       = each.key == local.first_environment
-  existing_oidc_provider_arn = each.key == local.first_environment ? null : module.gha_role[local.first_environment].oidc_provider_arn
+  create_oidc_provider       = false
+  existing_oidc_provider_arn = module.gha_role_provider.oidc_provider_arn
 
   allowed_subjects = [
     "repo:${var.github_org}/terraform-live:environment:${each.key}",
@@ -225,6 +249,13 @@ module "gha_role" {
 
   policy_json = data.aws_iam_policy_document.least_privilege[each.key].json
   tags        = merge(var.tags, { Environment = each.key })
+}
+
+locals {
+  gha_role_arns = merge(
+    { (local.first_environment) = module.gha_role_provider.role_arn },
+    { for env, mod in module.gha_role_rest : env => mod.role_arn }
+  )
 }
 
 # --- Alarma de presupuesto ---

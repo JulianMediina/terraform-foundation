@@ -15,7 +15,7 @@ Este es el único repo con estado de Terraform **local**: si `bootstrap` guardar
 
 ## Dependencia con `terraform-modules`
 
-`bootstrap` consume el módulo `iam-github-oidc` por referencia a un tag ya publicado (`modules_repo_ref` en las variables). Por eso `terraform-modules` debe tener al menos el tag `v0.1.0` publicado **antes** de aplicar `bootstrap`.
+`bootstrap` consume el módulo `iam-github-oidc` por una referencia de `source` **literal** (`?ref=v0.1.0`, ver comentario en `main.tf`) — no puede depender de una variable, porque Terraform resuelve `source`/`version` en `init`, antes de leer ninguna variable. Por eso `terraform-modules` debe tener al menos el tag `v0.1.0` publicado **antes** de aplicar `bootstrap`, y si cambia la versión hay que actualizar el literal a mano.
 
 ## Cómo ejecutarlo
 
