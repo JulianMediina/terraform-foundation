@@ -284,9 +284,17 @@ module "gha_role_provider" {
   environment          = local.first_environment
   create_oidc_provider = true
 
+  # El claim "sub" de GitHub para eventos pull_request es
+  # repo:<org>/<repo>:pull_request — no incluye el nombre del ambiente, aun
+  # cuando el job declara "environment:". Ese formato ("environment:<nombre>")
+  # solo aplica a push/workflow_dispatch/release. Por eso hace falta el
+  # patrón adicional para que infra-plan.yml (que corre en PR) pueda asumir
+  # el rol; el ambiente real que usa cada job de todos modos queda acotado
+  # por qué secret AWS_ROLE_ARN expone GitHub según el "environment:" del job.
   allowed_subjects = [
     "repo:${var.github_org}/terraform-live:environment:${local.first_environment}",
     "repo:${var.github_org}/daviplata-app:environment:${local.first_environment}",
+    "repo:${var.github_org}/terraform-live:pull_request",
   ]
 
   policy_json = data.aws_iam_policy_document.least_privilege[local.first_environment].json
@@ -304,6 +312,7 @@ module "gha_role_rest" {
   allowed_subjects = [
     "repo:${var.github_org}/terraform-live:environment:${each.key}",
     "repo:${var.github_org}/daviplata-app:environment:${each.key}",
+    "repo:${var.github_org}/terraform-live:pull_request",
   ]
 
   policy_json = data.aws_iam_policy_document.least_privilege[each.key].json
