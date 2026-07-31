@@ -19,6 +19,22 @@ locals {
   first_environment = var.environments[0]
 }
 
+# Política explícita de las llaves KMS: delega la administración en las
+# políticas IAM de la cuenta (comportamiento por defecto de AWS), pero de
+# forma explícita para que quede auditable como código.
+data "aws_iam_policy_document" "kms_default" {
+  statement {
+    sid    = "EnableAccountRootAccess"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    actions   = ["kms:*"]
+    resources = ["*"]
+  }
+}
+
 # --- Estado remoto de Terraform: un bucket + una tabla de lock por ambiente ---
 
 resource "aws_kms_key" "tfstate" {
@@ -26,6 +42,7 @@ resource "aws_kms_key" "tfstate" {
 
   description         = "Cifrado del estado de Terraform - ambiente ${each.key}"
   enable_key_rotation = true
+  policy              = data.aws_iam_policy_document.kms_default.json
 
   tags = merge(var.tags, { Environment = each.key })
 }
@@ -69,6 +86,27 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
   }
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "tfstate" {
+  for_each = toset(var.environments)
+
+  bucket = aws_s3_bucket.tfstate[each.key].id
+
+  rule {
+    id     = "expire-noncurrent-state-versions"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 90
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "tfstate" {
   for_each = toset(var.environments)
 
@@ -92,6 +130,10 @@ resource "aws_dynamodb_table" "tflock" {
     type = "S"
   }
 
+  point_in_time_recovery {
+    enabled = true
+  }
+
   tags = merge(var.tags, { Environment = each.key })
 }
 
@@ -102,6 +144,7 @@ resource "aws_kms_key" "site" {
 
   description         = "Cifrado del bucket de sitio estático - ambiente ${each.key}"
   enable_key_rotation = true
+  policy              = data.aws_iam_policy_document.kms_default.json
 
   tags = merge(var.tags, { Environment = each.key })
 }
@@ -188,15 +231,31 @@ data "aws_iam_policy_document" "least_privilege" {
   }
 
   statement {
-    sid    = "ObservabilityManage"
+    sid    = "CloudWatchManage"
     effect = "Allow"
     actions = [
       "cloudwatch:PutMetricAlarm",
       "cloudwatch:DeleteAlarms",
       "cloudwatch:DescribeAlarms",
+    ]
+    resources = ["arn:aws:cloudwatch:*:${data.aws_caller_identity.current.account_id}:alarm:${var.project}-${each.key}-*"]
+  }
+
+  statement {
+    sid    = "CloudWatchDashboardManage"
+    effect = "Allow"
+    actions = [
       "cloudwatch:PutDashboard",
       "cloudwatch:GetDashboard",
       "cloudwatch:DeleteDashboards",
+    ]
+    resources = ["arn:aws:cloudwatch::${data.aws_caller_identity.current.account_id}:dashboard/${var.project}-${each.key}"]
+  }
+
+  statement {
+    sid    = "SnsManage"
+    effect = "Allow"
+    actions = [
       "sns:CreateTopic",
       "sns:DeleteTopic",
       "sns:GetTopicAttributes",
@@ -206,17 +265,41 @@ data "aws_iam_policy_document" "least_privilege" {
       "sns:ListSubscriptionsByTopic",
       "sns:TagResource",
     ]
-    resources = ["*"]
+    resources = ["arn:aws:sns:*:${data.aws_caller_identity.current.account_id}:${var.project}-${each.key}-*"]
   }
 }
 
-module "gha_role" {
-  source   = "git::https://github.com/${var.github_org}/terraform-modules.git//modules/iam-github-oidc?ref=${var.modules_repo_ref}"
-  for_each = toset(var.environments)
+# source y ref son literales a propósito: Terraform los resuelve en "init",
+# antes de leer las variables, así que no pueden depender de var.github_org
+# ni var.modules_repo_ref. Si cambia el usuario/org de GitHub o se publica
+# una versión nueva del módulo, este valor se actualiza a mano aquí.
+#
+# Se separa en dos bloques (uno solo para el primer ambiente, otro con
+# for_each para el resto) en vez de un único for_each que se referencie a sí
+# mismo por índice: eso último produce un ciclo real en el grafo de Terraform
+# (el nodo "close" del for_each termina dependiendo de sus propias instancias).
+module "gha_role_provider" {
+  source = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.0"
+
+  environment          = local.first_environment
+  create_oidc_provider = true
+
+  allowed_subjects = [
+    "repo:${var.github_org}/terraform-live:environment:${local.first_environment}",
+    "repo:${var.github_org}/daviplata-app:environment:${local.first_environment}",
+  ]
+
+  policy_json = data.aws_iam_policy_document.least_privilege[local.first_environment].json
+  tags        = merge(var.tags, { Environment = local.first_environment })
+}
+
+module "gha_role_rest" {
+  source   = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.0"
+  for_each = toset(slice(var.environments, 1, length(var.environments)))
 
   environment                = each.key
-  create_oidc_provider       = each.key == local.first_environment
-  existing_oidc_provider_arn = each.key == local.first_environment ? null : module.gha_role[local.first_environment].oidc_provider_arn
+  create_oidc_provider       = false
+  existing_oidc_provider_arn = module.gha_role_provider.oidc_provider_arn
 
   allowed_subjects = [
     "repo:${var.github_org}/terraform-live:environment:${each.key}",
@@ -225,6 +308,13 @@ module "gha_role" {
 
   policy_json = data.aws_iam_policy_document.least_privilege[each.key].json
   tags        = merge(var.tags, { Environment = each.key })
+}
+
+locals {
+  gha_role_arns = merge(
+    { (local.first_environment) = module.gha_role_provider.role_arn },
+    { for env, mod in module.gha_role_rest : env => mod.role_arn }
+  )
 }
 
 # --- Alarma de presupuesto ---

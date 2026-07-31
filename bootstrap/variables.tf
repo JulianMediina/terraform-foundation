@@ -15,11 +15,6 @@ variable "github_org" {
   type        = string
 }
 
-variable "modules_repo_ref" {
-  description = "Tag de terraform-modules a usar para el módulo iam-github-oidc (debe existir antes de aplicar bootstrap)."
-  type        = string
-}
-
 variable "budget_limit_usd" {
   description = "Límite mensual de presupuesto de la cuenta, en USD."
   type        = number

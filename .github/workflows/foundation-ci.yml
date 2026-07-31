@@ -44,6 +44,7 @@ jobs:
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: bootstrap
+          config_file: .checkov.yaml
           quiet: true
           soft_fail: false
 
