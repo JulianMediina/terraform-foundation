@@ -6,7 +6,7 @@ Infraestructura fundacional de la plataforma DaviPlata: lo que tiene que existir
 
 - Un bucket S3 de estado remoto + una tabla DynamoDB de lock **por ambiente** (`integracion`, `laboratorio`, `produccion`), cada uno cifrado con su propia llave KMS.
 - Una llave KMS adicional por ambiente para cifrar el bucket del sitio estático (separada de la del estado).
-- El proveedor OIDC de GitHub Actions (una sola vez) y un rol IAM (`gha-<ambiente>`) por ambiente, least-privilege, consumiendo el módulo [`iam-github-oidc`](https://github.com/julian-mediina/terraform-modules/tree/main/modules/iam-github-oidc) de `terraform-modules`.
+- El proveedor OIDC de GitHub Actions (una sola vez) y un rol IAM (`gha-<ambiente>`) por ambiente, least-privilege, consumiendo el módulo [`iam-github-oidc`](https://github.com/JulianMediina/terraform-modules/tree/main/modules/iam-github-oidc) de `terraform-modules`.
 - Una alarma de presupuesto mensual (AWS Budgets) con notificación al 80% (real) y 100% (proyectado).
 
 ## Por qué estado local
