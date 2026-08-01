@@ -315,6 +315,8 @@ data "aws_iam_policy_document" "least_privilege" {
       "sns:Subscribe",
       "sns:Unsubscribe",
       "sns:ListSubscriptionsByTopic",
+      "sns:GetSubscriptionAttributes",
+      "sns:SetSubscriptionAttributes",
       "sns:TagResource",
       "sns:UntagResource",
       "sns:ListTagsForResource",
