@@ -9,7 +9,7 @@ output "tflock_tables" {
 }
 
 output "site_kms_key_arns" {
-  description = "ARN de la llave KMS de cifrado del bucket de sitio, por ambiente."
+  description = "ARN de la llave KMS de cifrado del repositorio ECR del sitio, por ambiente."
   value       = { for env, key in aws_kms_key.site : env => key.arn }
 }
 

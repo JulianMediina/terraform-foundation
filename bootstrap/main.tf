@@ -179,40 +179,20 @@ resource "aws_dynamodb_table" "tflock" {
   tags = merge(var.tags, { Environment = each.key })
 }
 
-# --- KMS para los buckets de sitio (uno por ambiente, distinto del de tfstate) ---
+# --- KMS para el repositorio ECR del sitio (uno por ambiente, distinto del de tfstate) ---
 
-# S3 con SSE-KMS + CloudFront OAC requiere que la política de la llave
-# autorice explícitamente a CloudFront a descifrar — si no, CloudFront
-# recibe un AccessDenied de S3 aunque la política del bucket esté bien.
-# No se puede acotar a la distribución exacta (aws:SourceArn) porque esta
-# llave la crea foundation antes de que terraform-live cree la distribución;
-# se acota por cuenta (aws:SourceAccount) en su lugar.
-data "aws_iam_policy_document" "kms_site" {
-  source_policy_documents = [data.aws_iam_policy_document.kms_default.json]
-
-  statement {
-    sid    = "AllowCloudFrontDecrypt"
-    effect = "Allow"
-    principals {
-      type        = "Service"
-      identifiers = ["cloudfront.amazonaws.com"]
-    }
-    actions   = ["kms:Decrypt", "kms:DescribeKey"]
-    resources = ["*"]
-    condition {
-      test     = "StringEquals"
-      variable = "aws:SourceAccount"
-      values   = [data.aws_caller_identity.current.account_id]
-    }
-  }
-}
-
+# A diferencia de CloudFront (un servicio, sin identidad IAM propia), el rol
+# que hace pull de la imagen (ecs-express) es un principal IAM normal: le
+# alcanza con un permiso kms:Decrypt en su propia policy (ver módulo
+# ecs-express), sin necesitar un statement de servicio en la política de la
+# llave. La política por defecto (delega en IAM vía el root de la cuenta) es
+# suficiente aquí.
 resource "aws_kms_key" "site" {
   for_each = toset(var.environments)
 
-  description         = "Cifrado del bucket de sitio estático - ambiente ${each.key}"
+  description         = "Cifrado del repositorio ECR del sitio - ambiente ${each.key}"
   enable_key_rotation = true
-  policy              = data.aws_iam_policy_document.kms_site.json
+  policy              = data.aws_iam_policy_document.kms_default.json
 
   tags = merge(var.tags, { Environment = each.key })
 }
@@ -254,18 +234,6 @@ data "aws_iam_policy_document" "least_privilege" {
   }
 
   statement {
-    sid    = "SiteBucketManage"
-    effect = "Allow"
-    actions = [
-      "s3:*",
-    ]
-    resources = [
-      "arn:aws:s3:::${var.project}-${each.key}-*",
-      "arn:aws:s3:::${var.project}-${each.key}-*/*",
-    ]
-  }
-
-  statement {
     sid       = "SiteKmsUse"
     effect    = "Allow"
     actions   = ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
@@ -274,8 +242,8 @@ data "aws_iam_policy_document" "least_privilege" {
 
   # kms:ListAliases no admite restricción por ARN de recurso (lista todos los
   # alias de la cuenta/región; no hay una variante "por alias"). terraform-live
-  # la necesita para resolver la llave de sitio por nombre de alias en tiempo
-  # de plan/apply (data "aws_kms_alias").
+  # la necesita para resolver la llave del repositorio ECR por nombre de alias
+  # en tiempo de plan/apply (data "aws_kms_alias").
   statement {
     sid       = "KmsListAliases"
     effect    = "Allow"
@@ -283,31 +251,131 @@ data "aws_iam_policy_document" "least_privilege" {
     resources = ["*"]
   }
 
-  # Las acciones de gestión de CloudFront no admiten restricción por ARN de
-  # recurso en IAM (limitación documentada del servicio); se acotan por acción.
   statement {
-    sid    = "CloudFrontManage"
+    sid    = "EcrRepositoryManage"
     effect = "Allow"
     actions = [
-      "cloudfront:CreateDistribution",
-      "cloudfront:GetDistribution",
-      "cloudfront:UpdateDistribution",
-      "cloudfront:DeleteDistribution",
-      "cloudfront:TagResource",
-      "cloudfront:UntagResource",
-      "cloudfront:ListTagsForResource",
-      "cloudfront:CreateOriginAccessControl",
-      "cloudfront:GetOriginAccessControl",
-      "cloudfront:UpdateOriginAccessControl",
-      "cloudfront:DeleteOriginAccessControl",
-      "cloudfront:CreateResponseHeadersPolicy",
-      "cloudfront:GetResponseHeadersPolicy",
-      "cloudfront:UpdateResponseHeadersPolicy",
-      "cloudfront:DeleteResponseHeadersPolicy",
-      "cloudfront:CreateInvalidation",
-      "cloudfront:GetInvalidation",
+      "ecr:CreateRepository",
+      "ecr:DescribeRepositories",
+      "ecr:DeleteRepository",
+      "ecr:PutLifecyclePolicy",
+      "ecr:GetLifecyclePolicy",
+      "ecr:DeleteLifecyclePolicy",
+      "ecr:PutImageScanningConfiguration",
+      "ecr:PutImageTagMutability",
+      "ecr:TagResource",
+      "ecr:UntagResource",
+      "ecr:ListTagsForResource",
     ]
+    resources = ["arn:aws:ecr:*:${data.aws_caller_identity.current.account_id}:repository/${var.project}-${each.key}-*"]
+  }
+
+  # El push/pull real de imágenes (release.yml de daviplata-app, mismo rol
+  # gha-<ambiente>) necesita estas acciones además de las de gestión.
+  # ecr:GetAuthorizationToken es la única que no admite restricción por ARN
+  # de recurso (autentica contra el registro completo de la cuenta).
+  statement {
+    sid    = "EcrImagePushPull"
+    effect = "Allow"
+    actions = [
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchGetImage",
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:PutImage",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:DescribeImages",
+      "ecr:ListImages",
+    ]
+    resources = ["arn:aws:ecr:*:${data.aws_caller_identity.current.account_id}:repository/${var.project}-${each.key}-*"]
+  }
+
+  statement {
+    sid       = "EcrAuth"
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
     resources = ["*"]
+  }
+
+  statement {
+    sid    = "EcsClusterManage"
+    effect = "Allow"
+    actions = [
+      "ecs:CreateCluster",
+      "ecs:DescribeClusters",
+      "ecs:DeleteCluster",
+      "ecs:PutClusterCapacityProviders",
+      "ecs:TagResource",
+      "ecs:UntagResource",
+      "ecs:ListTagsForResource",
+      "ecs:UpdateClusterSettings",
+    ]
+    resources = ["arn:aws:ecs:*:${data.aws_caller_identity.current.account_id}:cluster/${var.project}-${each.key}"]
+  }
+
+  # Cubre tanto la gestión del servicio Express (Terraform) como la
+  # actualización de la imagen desplegada fuera de Terraform (deploy.yml de
+  # daviplata-app, mismo rol). ecs:RegisterTaskDefinition se acota por
+  # familia -Express Mode genera revisiones versionadas cuyo ARN completo no
+  # se conoce de antemano.
+  statement {
+    sid    = "EcsExpressServiceManage"
+    effect = "Allow"
+    actions = [
+      "ecs:CreateExpressGatewayService",
+      "ecs:UpdateExpressGatewayService",
+      "ecs:DescribeExpressGatewayService",
+      "ecs:DeleteExpressGatewayService",
+      "ecs:DescribeServices",
+      "ecs:ListServiceDeployments",
+      "ecs:DescribeServiceDeployments",
+    ]
+    resources = ["arn:aws:ecs:*:${data.aws_caller_identity.current.account_id}:service/${var.project}-${each.key}/*"]
+  }
+
+  statement {
+    sid       = "EcsTaskDefinitionManage"
+    effect    = "Allow"
+    actions   = ["ecs:RegisterTaskDefinition", "ecs:DescribeTaskDefinition"]
+    resources = ["arn:aws:ecs:*:${data.aws_caller_identity.current.account_id}:task-definition/${var.project}-${each.key}-*"]
+  }
+
+  # El módulo ecs-express crea dos roles por ambiente (ejecución de tareas e
+  # infraestructura de ECS). PassRole está separado y acotado a esos mismos
+  # ARNs -es la única forma de que ECS pueda asumirlos sin abrir PassRole a
+  # cualquier rol de la cuenta.
+  statement {
+    sid    = "EcsExpressIamRoleManage"
+    effect = "Allow"
+    actions = [
+      "iam:CreateRole",
+      "iam:GetRole",
+      "iam:DeleteRole",
+      "iam:UpdateRole",
+      "iam:PutRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:ListAttachedRolePolicies",
+      "iam:TagRole",
+      "iam:UntagRole",
+    ]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/ecs-express-${each.key}-*"]
+  }
+
+  statement {
+    sid       = "EcsExpressIamPassRole"
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/ecs-express-${each.key}-*"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com", "ecs.amazonaws.com"]
+    }
   }
 
   statement {
