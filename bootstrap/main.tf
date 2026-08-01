@@ -195,6 +195,13 @@ resource "aws_kms_key" "site" {
   policy              = data.aws_iam_policy_document.kms_default.json
 
   tags = merge(var.tags, { Environment = each.key })
+
+  # Mismo caso que aws_sns_topic.foundation_pipeline: cuando este apply es el
+  # mismo que le otorga a gha-foundation un permiso nuevo (p.ej.
+  # kms:UpdateKeyDescription) Y lo usa (p.ej. renombrar la descripción), la
+  # sesión ya asumida no ve el permiso nuevo hasta que IAM propaga el cambio
+  # de policy -sin esta espera, falla intermitentemente con AccessDenied.
+  depends_on = [time_sleep.foundation_role_propagation]
 }
 
 resource "aws_kms_alias" "site" {
