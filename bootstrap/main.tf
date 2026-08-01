@@ -294,6 +294,7 @@ data "aws_iam_policy_document" "least_privilege" {
       "cloudfront:UpdateDistribution",
       "cloudfront:DeleteDistribution",
       "cloudfront:TagResource",
+      "cloudfront:UntagResource",
       "cloudfront:ListTagsForResource",
       "cloudfront:CreateOriginAccessControl",
       "cloudfront:GetOriginAccessControl",
