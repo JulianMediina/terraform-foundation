@@ -81,6 +81,12 @@ jobs:
         run: |
           git config user.name "daviplata-ci"
           git config user.email "ci@daviplata.local"
+          # El paso de rollback de arriba dejó el working tree Y el índice
+          # con la configuración anterior sin commitear (git checkout <ref>
+          # -- . también deja el índice modificado; "git checkout -- ."
+          # solo, sin ref, no lo deshace porque reconstruye desde ese mismo
+          # índice). Hace falta un reset --hard para limpiar los dos.
+          git reset --hard HEAD
           revert_branch="auto-revert/foundation-${{ github.run_id }}"
           git checkout -b "$revert_branch" "${{ github.sha }}"
           git revert --no-edit "${{ github.sha }}"
