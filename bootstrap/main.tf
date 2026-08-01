@@ -504,6 +504,7 @@ data "aws_iam_policy_document" "foundation_least_privilege" {
     actions = [
       "kms:CreateKey",
       "kms:DescribeKey",
+      "kms:UpdateKeyDescription",
       "kms:GetKeyPolicy",
       "kms:PutKeyPolicy",
       "kms:EnableKeyRotation",
