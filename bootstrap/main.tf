@@ -241,9 +241,21 @@ data "aws_iam_policy_document" "least_privilege" {
   }
 
   statement {
-    sid       = "SiteKmsUse"
-    effect    = "Allow"
-    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
+    sid    = "SiteKmsUse"
+    effect = "Allow"
+    # kms:CreateGrant/RevokeGrant: ECR los usa internamente para delegarse a
+    # sí mismo el cifrado/descifrado de las capas de imagen con una llave
+    # administrada por el cliente -sin esto, ecr:CreateRepository falla con
+    # un AccessDenied de KMS aunque el rol ya tenga permiso directo sobre la
+    # llave (kms:CreateGrant no se hereda de Encrypt/Decrypt/GenerateDataKey).
+    actions = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:GenerateDataKey",
+      "kms:DescribeKey",
+      "kms:CreateGrant",
+      "kms:RevokeGrant",
+    ]
     resources = [aws_kms_key.site[each.key].arn, aws_kms_key.tfstate[each.key].arn]
   }
 
