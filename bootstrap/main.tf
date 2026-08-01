@@ -346,6 +346,7 @@ data "aws_iam_policy_document" "least_privilege" {
       "sns:TagResource",
       "sns:UntagResource",
       "sns:ListTagsForResource",
+      "sns:Publish",
     ]
     resources = ["arn:aws:sns:*:${data.aws_caller_identity.current.account_id}:${var.project}-${each.key}-*"]
   }
