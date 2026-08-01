@@ -32,5 +32,6 @@ variable "tags" {
   default = {
     Project   = "daviplata"
     ManagedBy = "terraform-foundation"
+    Owner     = "platform-team"
   }
 }
