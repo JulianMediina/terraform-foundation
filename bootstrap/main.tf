@@ -177,12 +177,38 @@ resource "aws_dynamodb_table" "tflock" {
 
 # --- KMS para los buckets de sitio (uno por ambiente, distinto del de tfstate) ---
 
+# S3 con SSE-KMS + CloudFront OAC requiere que la política de la llave
+# autorice explícitamente a CloudFront a descifrar — si no, CloudFront
+# recibe un AccessDenied de S3 aunque la política del bucket esté bien.
+# No se puede acotar a la distribución exacta (aws:SourceArn) porque esta
+# llave la crea foundation antes de que terraform-live cree la distribución;
+# se acota por cuenta (aws:SourceAccount) en su lugar.
+data "aws_iam_policy_document" "kms_site" {
+  source_policy_documents = [data.aws_iam_policy_document.kms_default.json]
+
+  statement {
+    sid    = "AllowCloudFrontDecrypt"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+    actions   = ["kms:Decrypt", "kms:DescribeKey"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
 resource "aws_kms_key" "site" {
   for_each = toset(var.environments)
 
   description         = "Cifrado del bucket de sitio estático - ambiente ${each.key}"
   enable_key_rotation = true
-  policy              = data.aws_iam_policy_document.kms_default.json
+  policy              = data.aws_iam_policy_document.kms_site.json
 
   tags = merge(var.tags, { Environment = each.key })
 }
