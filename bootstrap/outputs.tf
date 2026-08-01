@@ -27,3 +27,8 @@ output "gha_foundation_role_arn" {
   description = "ARN del rol OIDC que usa este mismo repo (terraform-foundation) para su propio pipeline."
   value       = module.gha_role_foundation.role_arn
 }
+
+output "foundation_pipeline_sns_topic_arn" {
+  description = "ARN del tópico SNS para notificaciones del pipeline de este repo."
+  value       = aws_sns_topic.foundation_pipeline.arn
+}

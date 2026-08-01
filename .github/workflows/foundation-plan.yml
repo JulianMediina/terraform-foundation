@@ -18,6 +18,45 @@ env:
   TF_VAR_budget_notification_emails: ${{ secrets.BUDGET_NOTIFICATION_EMAILS }}
 
 jobs:
+  # Sin credenciales AWS -dan feedback rápido sin esperar la aprobación del
+  # ambiente que sí necesita el job "plan".
+  branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar convención de nombre de rama
+        run: |
+          head="${{ github.head_ref }}"
+          if [[ ! "$head" =~ ^(feature|fix)/.+ ]]; then
+            echo "PR hacia main debe venir de feature/* o fix/* (rama: '$head')." >&2
+            exit 1
+          fi
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  tflint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bootstrap
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.53.0
+
+      - run: tflint --init
+      - run: tflint
+
   plan:
     runs-on: ubuntu-latest
     environment: foundation

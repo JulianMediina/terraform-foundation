@@ -499,6 +499,27 @@ data "aws_iam_policy_document" "foundation_least_privilege" {
     ]
     resources = ["*"]
   }
+
+  statement {
+    sid    = "PipelineSnsManage"
+    effect = "Allow"
+    actions = [
+      "sns:CreateTopic",
+      "sns:DeleteTopic",
+      "sns:GetTopicAttributes",
+      "sns:SetTopicAttributes",
+      "sns:Subscribe",
+      "sns:Unsubscribe",
+      "sns:ListSubscriptionsByTopic",
+      "sns:GetSubscriptionAttributes",
+      "sns:SetSubscriptionAttributes",
+      "sns:TagResource",
+      "sns:UntagResource",
+      "sns:ListTagsForResource",
+      "sns:Publish",
+    ]
+    resources = ["arn:aws:sns:*:${data.aws_caller_identity.current.account_id}:${var.project}-foundation-*"]
+  }
 }
 
 # source y ref son literales a propósito: Terraform los resuelve en "init",
@@ -599,4 +620,22 @@ resource "aws_budgets_budget" "monthly" {
     notification_type          = "FORECASTED"
     subscriber_email_addresses = var.budget_notification_emails
   }
+}
+
+# --- Notificación de resultado del pipeline (plan/apply de este repo) ---
+# Reutiliza el mismo correo del presupuesto -es la misma persona a la que le
+# interesa saber qué pasa con la fundación de la plataforma.
+#tfsec:ignore:aws-sns-topic-encryption-use-cmk -- solo transporta notificaciones de texto del pipeline, no datos sensibles; cifrado ya con la llave administrada de AWS (alias/aws/sns).
+resource "aws_sns_topic" "foundation_pipeline" {
+  name              = "${var.project}-foundation-pipeline"
+  kms_master_key_id = "alias/aws/sns"
+  tags              = var.tags
+}
+
+resource "aws_sns_topic_subscription" "foundation_pipeline_email" {
+  for_each = toset(var.budget_notification_emails)
+
+  topic_arn = aws_sns_topic.foundation_pipeline.arn
+  protocol  = "email"
+  endpoint  = each.value
 }
