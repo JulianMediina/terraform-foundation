@@ -286,6 +286,9 @@ data "aws_iam_policy_document" "least_privilege" {
       "cloudwatch:PutMetricAlarm",
       "cloudwatch:DeleteAlarms",
       "cloudwatch:DescribeAlarms",
+      "cloudwatch:TagResource",
+      "cloudwatch:UntagResource",
+      "cloudwatch:ListTagsForResource",
     ]
     resources = ["arn:aws:cloudwatch:*:${data.aws_caller_identity.current.account_id}:alarm:${var.project}-${each.key}-*"]
   }
@@ -313,6 +316,8 @@ data "aws_iam_policy_document" "least_privilege" {
       "sns:Unsubscribe",
       "sns:ListSubscriptionsByTopic",
       "sns:TagResource",
+      "sns:UntagResource",
+      "sns:ListTagsForResource",
     ]
     resources = ["arn:aws:sns:*:${data.aws_caller_identity.current.account_id}:${var.project}-${each.key}-*"]
   }
