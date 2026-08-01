@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.11"
+    }
   }
 }
 
@@ -625,8 +629,20 @@ resource "aws_budgets_budget" "monthly" {
 # --- Notificación de resultado del pipeline (plan/apply de este repo) ---
 # Reutiliza el mismo correo del presupuesto -es la misma persona a la que le
 # interesa saber qué pasa con la fundación de la plataforma.
+
+# El propio pipeline se acaba de otorgar sns:CreateTopic a sí mismo (en este
+# mismo apply, vía module.gha_role_foundation) — IAM tarda unos segundos en
+# propagar un cambio de policy a una sesión ya asumida. Sin esta espera, el
+# create del tópico compite contra la propagación y falla intermitentemente.
+resource "time_sleep" "foundation_role_propagation" {
+  depends_on      = [module.gha_role_foundation]
+  create_duration = "15s"
+}
+
 #tfsec:ignore:aws-sns-topic-encryption-use-cmk -- solo transporta notificaciones de texto del pipeline, no datos sensibles; cifrado ya con la llave administrada de AWS (alias/aws/sns).
 resource "aws_sns_topic" "foundation_pipeline" {
+  depends_on = [time_sleep.foundation_role_propagation]
+
   name              = "${var.project}-foundation-pipeline"
   kms_master_key_id = "alias/aws/sns"
   tags              = var.tags
