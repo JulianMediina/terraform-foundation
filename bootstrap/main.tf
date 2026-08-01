@@ -352,6 +352,155 @@ data "aws_iam_policy_document" "least_privilege" {
   }
 }
 
+# Política del rol que usa este mismo repo (terraform-foundation) para
+# aplicarse a sí mismo por OIDC. Cubre exactamente los recursos que bootstrap
+# gestiona: los 3 buckets/tablas/llaves de tfstate, el proveedor OIDC, los
+# roles gha-<ambiente> (y este mismo, gha-foundation) y el budget mensual.
+# Las acciones de solo-lectura se validaron con un "terraform plan" real
+# contra un permission set de AWS SSO con este mismo alcance antes de crear
+# el rol -no son una lista adivinada.
+data "aws_iam_policy_document" "foundation_least_privilege" {
+  statement {
+    sid    = "TfstateBackendManage"
+    effect = "Allow"
+    actions = [
+      "s3:CreateBucket",
+      "s3:GetBucketLocation",
+      "s3:ListBucket",
+      "s3:PutBucketVersioning",
+      "s3:GetBucketVersioning",
+      "s3:PutEncryptionConfiguration",
+      "s3:GetEncryptionConfiguration",
+      "s3:PutBucketPublicAccessBlock",
+      "s3:GetBucketPublicAccessBlock",
+      "s3:PutLifecycleConfiguration",
+      "s3:GetLifecycleConfiguration",
+      "s3:PutBucketPolicy",
+      "s3:GetBucketPolicy",
+      "s3:DeleteBucketPolicy",
+      "s3:PutBucketTagging",
+      "s3:GetBucketTagging",
+      "s3:GetBucketAcl",
+      "s3:GetBucketCors",
+      "s3:GetBucketLogging",
+      "s3:GetBucketObjectLockConfiguration",
+      "s3:GetBucketReplication",
+      "s3:GetBucketRequestPayment",
+      "s3:GetBucketWebsite",
+      "s3:GetAccelerateConfiguration",
+      "s3:GetBucketNotification",
+      "s3:GetReplicationConfiguration",
+      "s3:GetIntelligentTieringConfiguration",
+      "s3:GetBucketOwnershipControls",
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = [
+      "arn:aws:s3:::${var.project}-tfstate-*",
+      "arn:aws:s3:::${var.project}-tfstate-*/*",
+    ]
+  }
+
+  statement {
+    sid    = "DynamoDbLockTablesManage"
+    effect = "Allow"
+    actions = [
+      "dynamodb:CreateTable",
+      "dynamodb:DescribeTable",
+      "dynamodb:UpdateTable",
+      "dynamodb:DeleteTable",
+      "dynamodb:TagResource",
+      "dynamodb:UntagResource",
+      "dynamodb:ListTagsOfResource",
+      "dynamodb:PutItem",
+      "dynamodb:GetItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:DescribeContinuousBackups",
+      "dynamodb:UpdateContinuousBackups",
+      "dynamodb:DescribeTimeToLive",
+    ]
+    resources = ["arn:aws:dynamodb:*:*:table/${var.project}-tflock-*"]
+  }
+
+  # Las llaves KMS de estado/sitio se crean en tiempo de apply, así que no hay
+  # ARN existente que referenciar en el momento de escribir esta policy.
+  statement {
+    sid    = "KmsManage"
+    effect = "Allow"
+    actions = [
+      "kms:CreateKey",
+      "kms:DescribeKey",
+      "kms:GetKeyPolicy",
+      "kms:PutKeyPolicy",
+      "kms:EnableKeyRotation",
+      "kms:GetKeyRotationStatus",
+      "kms:ScheduleKeyDeletion",
+      "kms:CancelKeyDeletion",
+      "kms:TagResource",
+      "kms:UntagResource",
+      "kms:ListResourceTags",
+      "kms:CreateAlias",
+      "kms:UpdateAlias",
+      "kms:DeleteAlias",
+      "kms:ListAliases",
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:GenerateDataKey",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "OidcProviderManage"
+    effect = "Allow"
+    actions = [
+      "iam:CreateOpenIDConnectProvider",
+      "iam:GetOpenIDConnectProvider",
+      "iam:DeleteOpenIDConnectProvider",
+      "iam:UpdateOpenIDConnectProviderThumbprint",
+      "iam:TagOpenIDConnectProvider",
+      "iam:UntagOpenIDConnectProvider",
+      "iam:ListOpenIDConnectProviders",
+    ]
+    resources = ["*"]
+  }
+
+  # Cubre tanto los roles gha-<ambiente> de terraform-live/daviplata-app como
+  # este mismo rol (gha-foundation) — el pipeline puede actualizar su propia
+  # policy/trust si bootstrap cambia.
+  statement {
+    sid    = "GhaRoleManage"
+    effect = "Allow"
+    actions = [
+      "iam:CreateRole",
+      "iam:GetRole",
+      "iam:DeleteRole",
+      "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:PutRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:TagRole",
+      "iam:UntagRole",
+    ]
+    resources = ["arn:aws:iam::*:role/gha-*"]
+  }
+
+  statement {
+    sid    = "BudgetsManage"
+    effect = "Allow"
+    actions = [
+      "budgets:ViewBudget",
+      "budgets:ModifyBudget",
+      "budgets:ListTagsForResource",
+    ]
+    resources = ["*"]
+  }
+}
+
 # source y ref son literales a propósito: Terraform los resuelve en "init",
 # antes de leer las variables, así que no pueden depender de var.github_org
 # ni var.modules_repo_ref. Si cambia el usuario/org de GitHub o se publica
@@ -396,6 +545,27 @@ module "gha_role_rest" {
 
   policy_json = data.aws_iam_policy_document.least_privilege[each.key].json
   tags        = merge(var.tags, { Environment = each.key })
+}
+
+# Rol que usa este mismo repo (terraform-foundation) para aplicarse a sí
+# mismo por OIDC, cerrando la única excepción de credencial estática que
+# quedaba en toda la plataforma. Se crea con la credencial estática existente
+# la última vez que se usa; después de este apply, foundation-plan.yml y
+# foundation-apply.yml se cambian para asumir este rol en vez de usar
+# FOUNDATION_AWS_ACCESS_KEY_ID/SECRET.
+module "gha_role_foundation" {
+  source = "git::https://github.com/JulianMediina/terraform-modules.git//modules/iam-github-oidc?ref=v0.1.4"
+
+  environment                = "foundation"
+  create_oidc_provider       = false
+  existing_oidc_provider_arn = module.gha_role_provider.oidc_provider_arn
+
+  allowed_subjects = [
+    "repo:${var.github_org}@*/terraform-foundation@*:environment:foundation",
+  ]
+
+  policy_json = data.aws_iam_policy_document.foundation_least_privilege.json
+  tags        = merge(var.tags, { Environment = "foundation" })
 }
 
 locals {
