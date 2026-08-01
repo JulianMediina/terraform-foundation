@@ -22,3 +22,8 @@ output "oidc_provider_arn" {
   description = "ARN del proveedor OIDC de GitHub, compartido por los tres ambientes."
   value       = module.gha_role_provider.oidc_provider_arn
 }
+
+output "gha_foundation_role_arn" {
+  description = "ARN del rol OIDC que usa este mismo repo (terraform-foundation) para su propio pipeline."
+  value       = module.gha_role_foundation.role_arn
+}
