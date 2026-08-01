@@ -8,14 +8,16 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
+  pull-requests: write
 
 env:
   TF_VERSION: "1.9.8"
   AWS_REGION: us-east-1
   TF_VAR_github_org: ${{ github.repository_owner }}
   TF_VAR_budget_notification_emails: ${{ secrets.BUDGET_NOTIFICATION_EMAILS }}
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   apply:
@@ -26,6 +28,8 @@ jobs:
         working-directory: bootstrap
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -49,3 +53,63 @@ jobs:
 
       - name: terraform apply
         run: terraform apply -input=false -auto-approve
+
+      # Confirma que el apply dejó todo exactamente como el plan decía. Sin
+      # smoke test HTTP acá -foundation no expone nada propio, a diferencia
+      # de terraform-live- así que la validación es puramente "sin drift".
+      - name: validar post-apply (sin drift)
+        id: postcheck
+        run: |
+          set +e
+          terraform plan -input=false -detailed-exitcode -no-color -out=/dev/null
+          echo "drift_exit=$?" >> "$GITHUB_OUTPUT"
+          set -e
+
+      # Rollback automático en el MISMO job: ya tiene la sesión OIDC de este
+      # apply, restaurar la configuración anterior no pasa de nuevo por el
+      # gate de aprobación. Nunca toca el .tfstate directamente.
+      - name: rollback automático (re-aplicar la configuración anterior)
+        id: rollback
+        if: steps.postcheck.outputs.drift_exit == '2'
+        run: |
+          git checkout "${{ github.event.before }}" -- .
+          terraform init -input=false -reconfigure
+          terraform apply -input=false -auto-approve
+
+      - name: abrir PR de reversión (para que el código coincida)
+        if: steps.rollback.outcome == 'success'
+        run: |
+          git config user.name "daviplata-ci"
+          git config user.email "ci@daviplata.local"
+          revert_branch="auto-revert/foundation-${{ github.run_id }}"
+          git checkout -b "$revert_branch" "${{ github.sha }}"
+          git revert --no-edit "${{ github.sha }}"
+          git push origin "$revert_branch"
+          gh pr create --repo "${{ github.repository }}" \
+            --base main --head "$revert_branch" \
+            --title "Reversión automática: foundation falló la validación post-apply" \
+            --body "El apply de foundation (commit ${{ github.sha }}) no pasó la validación post-despliegue. La infraestructura ya fue restaurada automáticamente a la versión anterior en el mismo run; este PR solo actualiza el código para que coincida con lo que está aplicado de verdad. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: notificar por correo (SNS)
+        if: always()
+        run: |
+          topic_arn=$(terraform output -raw foundation_pipeline_sns_topic_arn 2>/dev/null || echo "")
+          if [ -z "$topic_arn" ]; then
+            echo "sin sns_topic_arn disponible, omito notificación"
+            exit 0
+          fi
+          if [ "${{ steps.rollback.outcome }}" = "success" ]; then
+            resultado="rollback automático (post-apply falló)"
+          elif [ "${{ job.status }}" = "success" ]; then
+            resultado="success"
+          else
+            resultado="failure"
+          fi
+          message=$(printf 'Repo: terraform-foundation\nResultado: %s\nCommit: %s\nRun: %s' \
+            "$resultado" \
+            "${{ github.sha }}" \
+            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          aws sns publish \
+            --topic-arn "$topic_arn" \
+            --subject "foundation-apply: ${resultado}" \
+            --message "$message"
