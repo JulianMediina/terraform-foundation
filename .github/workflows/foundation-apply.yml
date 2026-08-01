@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
   TF_VERSION: "1.9.8"
@@ -30,11 +31,14 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Configurar credenciales AWS (arranque)
+      # El proveedor OIDC y el rol gha-foundation ya existen (los creó el
+      # primer bootstrap con la credencial estática, hace tiempo) — este
+      # pipeline ya no necesita esa credencial para nada, ni siquiera para
+      # aplicarse cambios a sí mismo.
+      - name: Configurar credenciales AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.FOUNDATION_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.FOUNDATION_AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Asegurar backend remoto (idempotente)
