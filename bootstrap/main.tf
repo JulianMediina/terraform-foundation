@@ -317,6 +317,34 @@ data "aws_iam_policy_document" "least_privilege" {
     resources = ["*"]
   }
 
+  # La promoción (laboratorio/producción) copia la misma imagen del ambiente
+  # anterior a su propio repositorio sin reconstruir -necesita leer de
+  # CUALQUIER repositorio de la plataforma, no solo el suyo. Escribir sigue
+  # acotado al propio (EcrImagePushPull, arriba).
+  statement {
+    sid    = "EcrCrossEnvironmentPull"
+    effect = "Allow"
+    actions = [
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchGetImage",
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:DescribeImages",
+    ]
+    resources = ["arn:aws:ecr:*:${data.aws_caller_identity.current.account_id}:repository/${var.project}-*"]
+  }
+
+  # Puntero de versión estable por ambiente, usado por rollback.sh (ya no hay
+  # bucket S3 donde guardar _meta/stable.txt).
+  statement {
+    sid    = "StableVersionParameter"
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:PutParameter",
+    ]
+    resources = ["arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/${each.key}/*"]
+  }
+
   statement {
     sid    = "EcsClusterManage"
     effect = "Allow"
