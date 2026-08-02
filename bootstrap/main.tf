@@ -366,6 +366,17 @@ data "aws_iam_policy_document" "least_privilege" {
     resources = ["arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/*"]
   }
 
+  # ssm:DescribeParameters no admite restricción por ARN de recurso (lista
+  # metadatos de todos los parámetros de la cuenta/región; no hay una
+  # variante "por parámetro"). El provider de Terraform la usa para leer
+  # metadatos (tags) de aws_ssm_parameter en cada plan/apply.
+  statement {
+    sid       = "SsmDescribeParameters"
+    effect    = "Allow"
+    actions   = ["ssm:DescribeParameters"]
+    resources = ["*"]
+  }
+
   statement {
     sid    = "EcsClusterManage"
     effect = "Allow"
