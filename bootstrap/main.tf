@@ -349,6 +349,9 @@ data "aws_iam_policy_document" "least_privilege" {
       "ecs:DescribeServices",
       "ecs:ListServiceDeployments",
       "ecs:DescribeServiceDeployments",
+      "ecs:TagResource",
+      "ecs:UntagResource",
+      "ecs:ListTagsForResource",
     ]
     resources = ["arn:aws:ecs:*:${data.aws_caller_identity.current.account_id}:service/${var.project}-${each.key}/*"]
   }
