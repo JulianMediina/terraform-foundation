@@ -270,50 +270,6 @@ data "aws_iam_policy_document" "least_privilege" {
     resources = ["*"]
   }
 
-  # TEMPORAL: laboratorio y producción todavía tienen el S3+CloudFront de la
-  # arquitectura anterior en su estado de Terraform (integración ya se migró
-  # a ECR+ECS Express). Sin este permiso, el rol no puede ni leer ni destruir
-  # sus propios recursos legado -terraform apply falla en el refresh con
-  # AccessDenied antes de poder generar un plan real. Se retira en un PR
-  # aparte en cuanto los tres ambientes terminen de migrar.
-  statement {
-    sid    = "LegacySiteBucketManage"
-    effect = "Allow"
-    actions = [
-      "s3:*",
-    ]
-    resources = [
-      "arn:aws:s3:::${var.project}-${each.key}-*",
-      "arn:aws:s3:::${var.project}-${each.key}-*/*",
-    ]
-  }
-
-  # TEMPORAL: ver LegacySiteBucketManage arriba.
-  statement {
-    sid    = "LegacyCloudFrontManage"
-    effect = "Allow"
-    actions = [
-      "cloudfront:CreateDistribution",
-      "cloudfront:GetDistribution",
-      "cloudfront:UpdateDistribution",
-      "cloudfront:DeleteDistribution",
-      "cloudfront:TagResource",
-      "cloudfront:UntagResource",
-      "cloudfront:ListTagsForResource",
-      "cloudfront:CreateOriginAccessControl",
-      "cloudfront:GetOriginAccessControl",
-      "cloudfront:UpdateOriginAccessControl",
-      "cloudfront:DeleteOriginAccessControl",
-      "cloudfront:CreateResponseHeadersPolicy",
-      "cloudfront:GetResponseHeadersPolicy",
-      "cloudfront:UpdateResponseHeadersPolicy",
-      "cloudfront:DeleteResponseHeadersPolicy",
-      "cloudfront:CreateInvalidation",
-      "cloudfront:GetInvalidation",
-    ]
-    resources = ["*"]
-  }
-
   statement {
     sid    = "EcrRepositoryManage"
     effect = "Allow"
