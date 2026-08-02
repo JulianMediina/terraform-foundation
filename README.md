@@ -5,7 +5,7 @@ Infraestructura fundacional de la plataforma DaviPlata: lo que tiene que existir
 ## Qué crea `bootstrap/`
 
 - Un bucket S3 de estado remoto + una tabla DynamoDB de lock **por ambiente** (`integracion`, `laboratorio`, `produccion`), cada uno cifrado con su propia llave KMS.
-- Una llave KMS adicional por ambiente para cifrar el bucket del sitio estático (separada de la del estado).
+- Una llave KMS adicional por ambiente para cifrar el repositorio ECR de imágenes de la aplicación (separada de la del estado; el nombre del recurso Terraform sigue siendo `aws_kms_key.site` por herencia del diseño original en S3+CloudFront, pero su uso real hoy es el repositorio ECR).
 - El proveedor OIDC de GitHub Actions (una sola vez) y un rol IAM por ambiente (`gha-integracion`, `gha-laboratorio`, `gha-produccion`, y `gha-foundation` para este mismo repo), least-privilege, consumiendo el módulo [`iam-github-oidc`](https://github.com/JulianMediina/terraform-modules/tree/main/modules/iam-github-oidc) de `terraform-modules`.
 - Una alarma de presupuesto mensual (AWS Budgets) con notificación al 80% (real) y 100% (proyectado).
 
