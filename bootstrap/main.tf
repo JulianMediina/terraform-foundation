@@ -58,7 +58,7 @@ resource "aws_kms_alias" "tfstate" {
   target_key_id = aws_kms_key.tfstate[each.key].key_id
 }
 
-#tfsec:ignore:aws-s3-enable-bucket-logging -- el acceso a nivel de API ya queda registrado por CloudTrail (habilitado a nivel de cuenta); un log bucket adicional no se justifica para el alcance de esta prueba.
+#tfsec:ignore:aws-s3-enable-bucket-logging -- el acceso a nivel de API ya queda registrado por CloudTrail (habilitado a nivel de cuenta); un log bucket adicional no aporta valor sobre eso.
 resource "aws_s3_bucket" "tfstate" {
   for_each = toset(var.environments)
 
