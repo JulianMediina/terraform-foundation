@@ -333,16 +333,37 @@ data "aws_iam_policy_document" "least_privilege" {
     resources = ["arn:aws:ecr:*:${data.aws_caller_identity.current.account_id}:repository/${var.project}-*"]
   }
 
-  # Puntero de versión estable por ambiente, usado por rollback.sh (ya no hay
-  # bucket S3 donde guardar _meta/stable.txt).
+  # Parámetros propios del ambiente bajo /daviplata/<ambiente>/*: el puntero
+  # de versión estable (rollback-ecs.sh) y los valores de infraestructura que
+  # terraform-live publica (repository_url, cluster_name, service_arn, etc.)
+  # para que daviplata-app no dependa de variables copiadas a mano entre
+  # repos. Acciones completas porque terraform-live gestiona estos parámetros
+  # como recursos de Terraform (crear/actualizar/destruir/tag), no solo
+  # escribirlos una vez.
   statement {
-    sid    = "StableVersionParameter"
+    sid    = "OwnEnvironmentParameterManage"
     effect = "Allow"
     actions = [
       "ssm:GetParameter",
+      "ssm:GetParameters",
       "ssm:PutParameter",
+      "ssm:DeleteParameter",
+      "ssm:AddTagsToResource",
+      "ssm:RemoveTagsFromResource",
+      "ssm:ListTagsForResource",
     ]
     resources = ["arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/${each.key}/*"]
+  }
+
+  # La promoción (laboratorio/producción) necesita leer los parámetros de
+  # infraestructura del ambiente ANTERIOR en la cadena (p.ej. el repositorio
+  # ECR de origen para copiar la imagen) — solo lectura, nunca escritura
+  # fuera del propio ambiente.
+  statement {
+    sid       = "CrossEnvironmentParameterRead"
+    effect    = "Allow"
+    actions   = ["ssm:GetParameter", "ssm:GetParameters"]
+    resources = ["arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/*"]
   }
 
   statement {
