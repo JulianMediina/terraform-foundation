@@ -377,6 +377,18 @@ data "aws_iam_policy_document" "least_privilege" {
     resources = ["*"]
   }
 
+  # tag:GetResources no admite restricción por ARN de recurso (busca entre
+  # todos los recursos etiquetados de la cuenta/región). El módulo
+  # observability lo usa para ubicar el ALB compartido de ECS Express Mode
+  # por tag (Component=ecs-express) en vez de por nombre, ya que AWS le
+  # asigna un sufijo aleatorio que Terraform no controla.
+  statement {
+    sid       = "TagGetResources"
+    effect    = "Allow"
+    actions   = ["tag:GetResources"]
+    resources = ["*"]
+  }
+
   statement {
     sid    = "EcsClusterManage"
     effect = "Allow"
