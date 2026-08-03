@@ -713,6 +713,13 @@ module "gha_role_provider" {
   allowed_subjects = [
     "repo:${var.github_org}@*/terraform-live@*:environment:${local.first_environment}",
     "repo:${var.github_org}@*/daviplata-app@*:environment:${local.first_environment}",
+    # Sin gate de aprobacion: scheduled-smoke.yml (canario de solo lectura,
+    # disparado por cron sin nadie presente para aprobar) usa un Environment
+    # de GitHub separado, sin required reviewers, solo para conservar el
+    # claim "environment" en el token OIDC -sin el, el trust policy no
+    # distingue que job corresponde a que ambiente y cualquier matriz podria
+    # asumir el rol de cualquier otra.
+    "repo:${var.github_org}@*/daviplata-app@*:environment:${local.first_environment}-readonly",
   ]
 
   policy_json = data.aws_iam_policy_document.least_privilege[local.first_environment].json
@@ -730,6 +737,8 @@ module "gha_role_rest" {
   allowed_subjects = [
     "repo:${var.github_org}@*/terraform-live@*:environment:${each.key}",
     "repo:${var.github_org}@*/daviplata-app@*:environment:${each.key}",
+    # Ver comentario equivalente en module.gha_role_provider.
+    "repo:${var.github_org}@*/daviplata-app@*:environment:${each.key}-readonly",
   ]
 
   policy_json = data.aws_iam_policy_document.least_privilege[each.key].json
